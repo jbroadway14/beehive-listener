@@ -16,22 +16,28 @@ st.caption("Record 10s of audio + log conditions. Builds your hive dataset.")
 DATA_FILE = "hive_logs.csv"
 
 def analyze_audio(audio_bytes):
+    """Returns Peak Hz, Spectral Centroid, RMS Energy, and Noise warning"""
     sample_rate, data = wavfile.read(io.BytesIO(audio_bytes))
     if data.ndim > 1:
         data = data.mean(axis=1)
     data = data.astype(np.float32)
     data = data - np.mean(data)
-    
+
+    # 1. Peak Frequency
     N = len(data)
     yf = rfft(data)
     xf = rfftfreq(N, 1 / sample_rate)
     idx = np.argmax(np.abs(yf))
     peak_hz = xf[idx]
-    
+
+    # 2. Spectral Centroid = "Brightness"
     magnitudes = np.abs(yf)
     centroid = np.sum(xf * magnitudes) / np.sum(magnitudes)
+
+    # 3. RMS Energy = "Loudness"
     rms = np.sqrt(np.mean(data**2))
-    
+
+    # 4. Wind/Rain check: Energy below 80Hz
     low_band_energy = np.mean(magnitudes[xf < 80])
     total_energy = np.mean(magnitudes)
     wind_warning = (low_band_energy / total_energy) > 0.4
@@ -54,7 +60,7 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("1. Record Audio")
-    
+
     if st.button("⏳ Start 5s Countdown Then Record"):
         placeholder = st.empty()
         for i in range(5, 0, -1):
@@ -62,7 +68,7 @@ with col1:
             time.sleep(1)
         placeholder.empty()
         st.session_state.start_rec = True
-    
+
     if st.session_state.get("start_rec", False):
         audio_bytes = st.audio_input("Recording now... Hold still for 10s")
         if audio_bytes:
@@ -77,23 +83,23 @@ with col2:
     time_of_day = st.selectbox("Time of Day", ["Morning 6-11", "Afternoon 11-4", "Evening 4-8"])
     weather = st.selectbox("Weather", ["Sunny/Calm", "Windy", "Cloudy", "Raining"])
     strength = st.selectbox("Hive Strength Guess", ["Weak/Nuc", "Medium", "Booming/Double"])
-    label = st.selectbox("Ground Truth - What you saw", 
-                         ["Calm/Foraging", "Agitated/Defensive", "Queenless Roar", 
+    label = st.selectbox("Ground Truth - What you saw",
+                         ["Calm/Foraging", "Agitated/Defensive", "Queenless Roar",
                           "Queen Piping", "Swarm Prep", "Robbing", "Unknown"])
 
 if audio_bytes:
     with st.spinner("Analyzing..."):
         peak_hz, centroid, rms, wind = analyze_audio(audio_bytes.getvalue())
-    
+
     st.subheader("3. Results")
     m1, m2, m3 = st.columns(3)
     m1.metric("Peak Hz", f"{peak_hz} Hz")
     m2.metric("Centroid", f"{centroid} Hz")
     m3.metric("Energy", f"{rms}")
-    
+
     if wind:
         st.warning("⚠️ High wind/rain noise detected <80Hz. Data may be noisy.")
-    
+
     if st.button("✅ Save This Log", type="primary"):
         log_row = {
             "timestamp": datetime.now().isoformat(),
